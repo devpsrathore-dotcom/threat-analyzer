@@ -1,16 +1,6 @@
-// =============================================================================
-//  Threat Analyzer - web dashboard (C++17 / Crow)
-//
-//  `threat_analyzer serve` starts a Crow HTTP server on 127.0.0.1 that
-//    * serves the front-end (web/index.html, web/styles.css, web/app.js), and
-//    * exposes the existing analysis engine as a JSON REST API under /api/.
-//  The engine itself (FileScanner, analyzeLog, analyzeSystem, RuleSet, ...) is
-//  unchanged: this file only translates HTTP requests into engine calls.
-//
-//  Security: bound to loopback only; every request must come from a loopback
-//  peer with a localhost Host header (DNS-rebinding protection); state-changing
-//  requests with a foreign Origin are refused (CSRF protection).
-// =============================================================================
+// Threat Analyzer - web server for the dashboard (uses Crow)
+// runs on 127.0.0.1 only, serves the web folder and the /api/ routes
+// requests from other hosts/origins are rejected
 #include <crow.h>
 
 #include "threat_analyzer.hpp"
@@ -39,7 +29,7 @@ namespace {
 
 using Method = crow::HTTPMethod;
 
-// ------------------------------------------------------------------ helpers
+// helpers
 std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
@@ -89,7 +79,7 @@ crow::response error(int code, const std::string& message) {
     return json(j, code);
 }
 
-// Thrown for invalid client input -> HTTP 400 with the message.
+// bad input -> 400 error
 struct BadRequest : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
@@ -144,7 +134,7 @@ std::string stripQuotes(std::string s) {
     return s;
 }
 
-// Upload names keep only a safe last path component (the extension matters to the scanner).
+// clean up uploaded file name (keep extension)
 std::string safeFileName(std::string name) {
     const size_t slash = name.find_last_of("/\\");
     if (slash != std::string::npos) name = name.substr(slash + 1);
@@ -157,7 +147,7 @@ std::string safeFileName(std::string name) {
     return name.empty() ? "upload.bin" : name;
 }
 
-// ------------------------------------------------------------------ reports
+// reports
 struct StoredReport {
     int id = 0;
     std::string generated;
@@ -176,7 +166,7 @@ crow::json::wvalue severityCounts(const std::vector<Finding>& findings) {
     return s;
 }
 
-// Same fields as the CLI's --json report, plus id/generated for the dashboard.
+// same as --json output + id and time
 crow::json::wvalue reportJson(const StoredReport& sr, bool withFindings) {
     const Report& r = sr.report;
     const int score = riskScore(r.findings);
@@ -271,7 +261,7 @@ private:
     int nextId_ = 0;
 };
 
-// ------------------------------------------------------------------ request guard
+// request guard
 bool isLocalHostHeader(const std::string& raw) {
     std::string host = lower(trim(raw));
     if (host.rfind("[::1]", 0) == 0) host = host.substr(5);
@@ -308,7 +298,7 @@ struct LocalOnlyGuard {
 
 using WebApp = crow::App<LocalOnlyGuard>;
 
-// ------------------------------------------------------------------ static files
+// static files
 std::string mimeFor(const std::string& ext) {
     static const std::map<std::string, std::string> types{
         {".html", "text/html; charset=utf-8"},      {".css", "text/css; charset=utf-8"},
@@ -337,7 +327,7 @@ crow::response serveStatic(const fs::path& root, const std::string& rel) {
     return r;
 }
 
-// ------------------------------------------------------------------ OS helpers
+// OS helpers
 bool portAvailable(uint16_t port) {
     try {
         asio::io_context io;
@@ -385,7 +375,7 @@ std::string uniqueStamp() {
            std::to_string(++counter);
 }
 
-// Removes a temporary file/folder when the request finishes.
+// deletes temp file when done
 struct TempGuard {
     fs::path path;
     ~TempGuard() {
@@ -396,7 +386,6 @@ struct TempGuard {
 
 }  // namespace
 
-// =============================================================================
 int runWebServer(const RuleSet& rules, const WebOptions& opt) {
     std::cout << std::unitbuf;  // flush every line so redirected logs are complete
     uint16_t port = opt.port;
@@ -446,10 +435,10 @@ int runWebServer(const RuleSet& rules, const WebOptions& opt) {
     WebApp app;
     app.loglevel(crow::LogLevel::Warning);
 
-    // ------------------------------------------------------------- front-end
+    // front-end
     CROW_ROUTE(app, "/")([webRoot] { return serveStatic(webRoot, "index.html"); });
 
-    // ------------------------------------------------------------- system
+    // system
     CROW_ROUTE(app, "/api/health").methods(Method::Get)([rs, rulesShown, port, started, samplesDir] {
         crow::json::wvalue j;
         j["status"] = "ok";
@@ -544,7 +533,7 @@ int runWebServer(const RuleSet& rules, const WebOptions& opt) {
         return json(j);
     });
 
-    // ------------------------------------------------------------- analysis
+    // analysis
     CROW_ROUTE(app, "/api/scan").methods(Method::Post)([rs, rulesLabel, job, finish, makeScanOptions](const crow::request& req) {
         return guarded([&] {
             const auto b = parseJsonBody(req);
@@ -573,7 +562,7 @@ int runWebServer(const RuleSet& rules, const WebOptions& opt) {
         });
     });
 
-    // Raw file upload: POST /api/scan/upload?name=<original file name>, body = file bytes.
+    // POST /api/scan/upload?name=filename  (body = file)
     CROW_ROUTE(app, "/api/scan/upload").methods(Method::Post)([rs, rulesLabel, job, finish, &opt](const crow::request& req) {
         return guarded([&] {
             constexpr size_t kMaxUpload = 128ull * 1024 * 1024;
@@ -611,7 +600,7 @@ int runWebServer(const RuleSet& rules, const WebOptions& opt) {
         });
     });
 
-    // Log analysis: {"path": "..."} for a file on disk, or {"content": "...", "name": "..."} for pasted text.
+    // log analysis: send a path or pasted content
     CROW_ROUTE(app, "/api/logs").methods(Method::Post)([rs, rulesLabel, job, finish](const crow::request& req) {
         return guarded([&] {
             const auto b = parseJsonBody(req);
@@ -724,8 +713,7 @@ int runWebServer(const RuleSet& rules, const WebOptions& opt) {
         });
     });
 
-    // Clean shutdown, used by stop.bat. The custom header forces a CORS preflight that this
-    // server never grants, so other web pages cannot trigger it.
+    // shutdown route for stop.bat (needs custom header)
     CROW_ROUTE(app, "/api/shutdown").methods(Method::Post)([&app](const crow::request& req) {
         if (req.get_header_value("X-Threat-Analyzer") != "shutdown")
             return error(400, "Missing header X-Threat-Analyzer: shutdown");
@@ -740,7 +728,7 @@ int runWebServer(const RuleSet& rules, const WebOptions& opt) {
         return json(j);
     });
 
-    // ------------------------------------------------------------- remaining static files
+    // remaining static files
     CROW_ROUTE(app, "/<path>")([webRoot](const std::string& path) {
         if (path.rfind("api/", 0) == 0) return error(404, "Unknown API endpoint");
         return serveStatic(webRoot, path);

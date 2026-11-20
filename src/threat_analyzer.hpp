@@ -1,5 +1,5 @@
 #pragma once
-// Threat Analyzer - shared declarations for every module.
+// Threat Analyzer - declarations
 
 #include <cstddef>
 #include <cstdint>
@@ -18,14 +18,14 @@ namespace ta {
 
 namespace fs = std::filesystem;
 
-// ---------------------------------------------------------------- severity
+// severity
 enum class Severity { Info = 0, Low, Medium, High, Critical };
 
 const char* severityName(Severity s);
 int severityWeight(Severity s);
 bool parseSeverity(const std::string& text, Severity& out);
 
-// ---------------------------------------------------------------- findings
+// findings
 struct Finding {
     std::string category;  // Signature, Heuristic, PE, Log, Process, Network, Persistence
     std::string title;     // short name of what was detected
@@ -34,7 +34,7 @@ struct Finding {
     Severity severity = Severity::Info;
 };
 
-// ---------------------------------------------------------------- rules
+// rules
 struct Rule {
     enum class Type { Hash, String, Hex, Regex };
     Type type = Type::String;
@@ -57,7 +57,7 @@ public:
     fs::path source;
 };
 
-// ---------------------------------------------------------------- utilities
+// utilities
 std::string toLower(std::string s);
 std::string trim(const std::string& s);
 std::string printable(const std::string& s, size_t maxLen = 160);
@@ -68,7 +68,7 @@ std::string wideToUtf8(const std::wstring& w);
 std::vector<std::string> extractIPv4(const std::string& text);
 bool isPrivateIPv4(const std::string& ip);
 
-// ---------------------------------------------------------------- hashing / entropy
+// hashing / entropy
 class Sha256 {
 public:
     Sha256();
@@ -87,7 +87,7 @@ std::string sha256Hex(const uint8_t* data, size_t len);
 bool sha256File(const fs::path& file, std::string& hexOut);
 double shannonEntropy(const uint8_t* data, size_t len);
 
-// ---------------------------------------------------------------- file scanner
+// file scanner
 struct ScanOptions {
     uint64_t maxFileSize = 64ull * 1024 * 1024;  // content analysis limit
     bool recursive = true;
@@ -117,7 +117,7 @@ private:
     ScanOptions opt_;
 };
 
-// ---------------------------------------------------------------- log analyzer
+// log analyzer
 struct LogOptions {
     int bruteForceThreshold = 5;  // failed logins from one IP
     int portScanThreshold = 10;   // distinct destination ports from one IP
@@ -135,7 +135,7 @@ struct LogStats {
 std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, const LogOptions& opt,
                                 LogStats& stats, std::string& error);
 
-// ---------------------------------------------------------------- live system audit
+// live system audit
 struct SystemOptions {
     bool deep = false;  // also scan every running executable with the file scanner
     ScanOptions scan;
@@ -155,7 +155,7 @@ bool systemAuditSupported();
 std::vector<Finding> analyzeSystem(const RuleSet& rules, const SystemOptions& opt,
                                    SystemStats& stats, std::string& error);
 
-// ---------------------------------------------------------------- reporting
+// reporting
 struct Report {
     std::string mode;
     std::string target;
@@ -171,14 +171,14 @@ void sortFindings(std::vector<Finding>& findings);
 void printReport(const Report& report, bool color, Severity minSeverity);
 bool writeJson(const Report& report, const fs::path& file, std::string& error);
 
-// ---------------------------------------------------------------- self-test
+// self-test
 struct SelfTestCheck {
     std::string name;
     bool passed = false;
 };
 std::vector<SelfTestCheck> runSelfTestChecks();  // shared by the CLI and the web dashboard
 
-// ---------------------------------------------------------------- web dashboard (web_server.cpp)
+// web dashboard (web_server.cpp)
 struct WebOptions {
     uint16_t port = 18080;      // http://localhost:18080
     bool strictPort = false;    // fail instead of trying the next port when busy

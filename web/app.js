@@ -1,9 +1,7 @@
-/* THREAT ANALYZER - dashboard front-end.
- * Every number on screen comes from the C++ engine through the REST API
- * served by the same Crow server (same origin, relative /api/... URLs). */
+// Threat Analyzer - frontend
 'use strict';
 
-// ------------------------------------------------------------------ helpers
+// helpers
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -70,7 +68,7 @@ async function withBusy(btn, fn) {
   finally { btn.disabled = false; btn.innerHTML = label; }
 }
 
-// ------------------------------------------------------------------ engine status
+// engine status
 const state = { health: null, online: null, samples: null };
 
 function setOnline(on) {
@@ -114,7 +112,7 @@ setInterval(async () => {
   catch (_) { setOnline(false); }
 }, 5000);
 
-// ------------------------------------------------------------------ report rendering
+// report rendering
 function renderReport(r) {
   const s = r.summary || {};
   const total = SEVS.reduce((n, k) => n + (s[k.toLowerCase()] || 0), 0);
@@ -203,7 +201,7 @@ function showReport(target, r, scroll = true) {
   refreshHistoryCount();
 }
 
-// ------------------------------------------------------------------ views
+// views
 const views = {};
 
 views.dashboard = {
@@ -522,7 +520,7 @@ views.selftest = {
   },
 };
 
-// ------------------------------------------------------------------ router
+// router
 async function navigate() {
   const raw = location.hash.replace(/^#\/?/, '') || 'dashboard';
   const [name, arg] = raw.split('/');

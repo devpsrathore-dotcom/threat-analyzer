@@ -1,8 +1,4 @@
-// =============================================================================
-//  Threat Analyzer - static file, log and live-system threat analysis (C++17)
-//  Single-file build: declarations, core, scanner, log analyzer, Windows system
-//  audit, reporting and the command-line interface.
-// =============================================================================
+// Threat Analyzer - file, log and system threat analysis
 #ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
@@ -16,10 +12,7 @@
 #endif
 #include "threat_analyzer.hpp"
 
-// =============================================================================
-//  core
-// =============================================================================
-// Threat Analyzer - core utilities: severities, rule database, SHA-256, entropy, helpers.
+// core functions: severity, rules, sha256, entropy
 
 #include <algorithm>
 #include <cctype>
@@ -31,7 +24,7 @@
 
 namespace ta {
 
-// ======================================================================= severity
+// severity
 const char* severityName(Severity s) {
     switch (s) {
         case Severity::Info: return "INFO";
@@ -65,7 +58,7 @@ bool parseSeverity(const std::string& text, Severity& out) {
     return true;
 }
 
-// ======================================================================= helpers
+// helpers
 std::string toLower(std::string s) {
     for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
@@ -183,7 +176,7 @@ bool isPrivateIPv4(const std::string& ip) {
            (a == 169 && b == 254) || (a == 100 && b >= 64 && b <= 127) || a >= 224;
 }
 
-// ======================================================================= rule database
+// rule database
 static bool decodeHex(const std::string& text, std::vector<uint8_t>& out) {
     std::string h;
     for (char c : text)
@@ -284,7 +277,7 @@ size_t RuleSet::total() const {
     return hashRules.size() + stringRules.size() + hexRules.size() + logRules.size();
 }
 
-// ======================================================================= SHA-256 (FIPS 180-4)
+// sha256
 namespace {
 constexpr uint32_t kSha256K[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -417,10 +410,7 @@ double shannonEntropy(const uint8_t* data, size_t len) {
 
 }  // namespace ta
 
-// =============================================================================
-//  scanner
-// =============================================================================
-// Threat Analyzer - static file scanner: signatures, PE structure checks and heuristics.
+// file scanner
 
 #include <algorithm>
 #include <cctype>
@@ -501,7 +491,7 @@ Finding make(const char* category, std::string title, std::string detail, const 
     return f;
 }
 
-// Parses the PE headers. Returns true when the buffer is a valid PE image.
+// read PE header, returns false if not a valid exe
 bool analyzePE(const std::string& name, const std::vector<uint8_t>& d, const std::string& ext,
                double entropyThreshold, std::vector<Finding>& out) {
     const size_t size = d.size();
@@ -592,8 +582,8 @@ std::vector<Finding> FileScanner::scanPath(const fs::path& target, ScanStats& st
     if (fs::is_regular_file(target, ec)) return scanFile(target, stats);
     if (!fs::is_directory(target, ec)) return all;
 
-    // Iterative per-directory walk: an unreadable directory only skips that directory instead of
-    // aborting the whole scan. Symlinks/junctions are not followed and depth is capped to avoid loops.
+    // walk folders one by one so one bad folder doesnt stop the scan
+    // (skip symlinks and limit depth)
     struct Pending {
         fs::path dir;
         int depth;
@@ -648,7 +638,7 @@ std::vector<Finding> FileScanner::scanFile(const fs::path& file, ScanStats& stat
     const std::string ext = toLower(pathToUtf8(file.extension()));
     const std::string fileName = pathToUtf8(file.filename());
 
-    // ---- filename tricks
+    // filename tricks
     if (kExecExt.count(ext)) {
         const std::string inner = toLower(pathToUtf8(file.stem().extension()));
         if (kLureExt.count(inner)) {
@@ -669,7 +659,7 @@ std::vector<Finding> FileScanner::scanFile(const fs::path& file, ScanStats& stat
         return out;
     }
 
-    // ---- large files: hash only
+    // large files: hash only
     if (size > opt_.maxFileSize) {
         std::string hash;
         if (!sha256File(file, hash)) {
@@ -705,13 +695,13 @@ std::vector<Finding> FileScanner::scanFile(const fs::path& file, ScanStats& stat
 
 void FileScanner::analyzeContent(const std::string& name, const std::vector<uint8_t>& data, const std::string& ext,
                                  std::vector<Finding>& out, ScanStats& stats) const {
-    // ---- 1. hash signatures
+    // 1. hash signatures
     const std::string hash = sha256Hex(data.data(), data.size());
     for (const auto& r : rules_.hashRules)
         if (r.value == hash)
             out.push_back(make("Signature", r.name, "SHA-256 matches known malicious hash " + hash, name, r.severity));
 
-    // ---- 2. string signatures (case-insensitive)
+    // 2. string signatures (case-insensitive)
     std::string lower(data.begin(), data.end());
     for (auto& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
@@ -727,7 +717,7 @@ void FileScanner::analyzeContent(const std::string& name, const std::vector<uint
                            name, r.severity));
     }
 
-    // ---- 3. byte-pattern signatures
+    // 3. byte-pattern signatures
     for (const auto& r : rules_.hexRules) {
         auto it = std::search(data.begin(), data.end(), r.bytes.begin(), r.bytes.end());
         if (it == data.end()) continue;
@@ -736,25 +726,24 @@ void FileScanner::analyzeContent(const std::string& name, const std::vector<uint
                            r.severity));
     }
 
-    // ---- 4. PE structure
+    // 4. PE structure
     const bool isPE = analyzePE(name, data, ext, opt_.entropyThreshold, out);
     if (isPE) ++stats.peFiles;
 
-    // ---- 5. process-injection API combination
+    // 5. process-injection API combination
     std::vector<std::string> apis;
     for (const char* api : kInjectionApis)
         if (lower.find(api) != std::string::npos) apis.emplace_back(api);
     if (apis.size() >= 3) {
         std::string list;
         for (const auto& a : apis) list += (list.empty() ? "" : ", ") + a;
-        // Scripts that reference these APIs (e.g. PowerShell Add-Type loaders) are far more suspicious than
-        // compiled programs, where debuggers, browsers and security tools import them legitimately.
+        // only flag this for scripts, normal exes use these apis a lot
         out.push_back(make("Heuristic", "Process-injection API combination",
                            std::to_string(apis.size()) + " injection-related APIs referenced: " + list, name,
                            isPE ? Severity::Medium : Severity::High));
     }
 
-    // ---- 6. text-only heuristics
+    // 6. text-only heuristics
     const size_t probe = std::min<size_t>(data.size(), 8192);
     const bool isText = !data.empty() && std::find(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(probe), 0) ==
                                              data.begin() + static_cast<std::ptrdiff_t>(probe);
@@ -800,7 +789,7 @@ void FileScanner::analyzeContent(const std::string& name, const std::vector<uint
         }
     }
 
-    // ---- 7. entropy of non-PE, non-compressed data
+    // 7. entropy of non-PE, non-compressed data
     if (!isPE && data.size() >= 4096 && !isCompressedFormat(ext, data)) {
         const double e = shannonEntropy(data.data(), data.size());
         if (e >= opt_.entropyThreshold) {
@@ -814,10 +803,7 @@ void FileScanner::analyzeContent(const std::string& name, const std::vector<uint
 
 }  // namespace ta
 
-// =============================================================================
-//  log_analyzer
-// =============================================================================
-// Threat Analyzer - log analysis: signature rules, brute force, web enumeration and port scans.
+// log analysis
 
 #include <algorithm>
 #include <cctype>
@@ -858,7 +844,7 @@ struct FwStats {
     size_t firstLine = 0;
 };
 
-// Decode a UTF-16LE buffer (Windows PowerShell 5 "Out-File" default) to UTF-8.
+// convert utf-16 log (powershell output) to utf-8
 std::string utf16leToUtf8(const std::string& raw) {
     std::string out;
     out.reserve(raw.size() / 2);
@@ -961,7 +947,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
         const std::vector<std::string> ips = extractIPv4(line);
         for (const auto& ip : ips) allIps.insert(ip);
 
-        // ---- signature rules
+        // signature rules
         for (size_t i = 0; i < rules.logRules.size(); ++i) {
             if (!std::regex_search(line, rules.logRules[i].re)) continue;
             RuleHit& h = hits[i];
@@ -973,7 +959,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
                 if (h.ips.size() < 64) h.ips.insert(ip);
         }
 
-        // ---- authentication
+        // authentication
         if (std::regex_search(line, failRe)) {
             ++stats.failedLogins;
             if (!ips.empty()) {
@@ -991,7 +977,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
                 it->second.successAfterBrute = lineNo;
         }
 
-        // ---- web access log (Common / Combined Log Format)
+        // web access log (Common / Combined Log Format)
         std::smatch wm;
         if (std::regex_search(line, wm, webRe)) {
             ++stats.httpRequests;
@@ -1005,7 +991,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
             continue;
         }
 
-        // ---- firewall: iptables / ufw
+        // firewall: iptables / ufw
         std::smatch fm;
         if (std::regex_search(line, fm, iptablesRe)) {
             ++stats.firewallEvents;
@@ -1015,7 +1001,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
             continue;
         }
 
-        // ---- firewall: Windows pfirewall.log  (date time action protocol src dst sport dport ...)
+        // firewall: Windows pfirewall.log  (date time action protocol src dst sport dport ...)
         std::istringstream tok(line);
         std::vector<std::string> t;
         std::string w;
@@ -1035,7 +1021,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
     stats.uniqueIps = allIps.size();
     const std::string fname = pathToUtf8(file.filename());
 
-    // ---- emit signature findings (one per rule)
+    // emit signature findings (one per rule)
     for (size_t i = 0; i < hits.size(); ++i) {
         const RuleHit& h = hits[i];
         if (h.count == 0) continue;
@@ -1050,7 +1036,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
         out.push_back(std::move(f));
     }
 
-    // ---- brute force
+    // brute force
     for (const auto& kv : logins) {
         const LoginStats& ls = kv.second;
         if (ls.failures < static_cast<size_t>(opt.bruteForceThreshold)) continue;
@@ -1077,7 +1063,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
         }
     }
 
-    // ---- web enumeration / login brute force
+    // web enumeration / login brute force
     for (const auto& kv : web) {
         const WebStats& ws = kv.second;
         if (ws.notFound >= static_cast<size_t>(opt.notFoundThreshold)) {
@@ -1101,7 +1087,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
         }
     }
 
-    // ---- port scans
+    // port scans
     for (const auto& kv : fw) {
         const FwStats& f = kv.second;
         if (f.ports.size() < static_cast<size_t>(opt.portScanThreshold)) continue;
@@ -1125,10 +1111,7 @@ std::vector<Finding> analyzeLog(const fs::path& file, const RuleSet& rules, cons
 
 }  // namespace ta
 
-// =============================================================================
-//  system_monitor
-// =============================================================================
-// Threat Analyzer - live Windows system audit: processes, TCP connections and autorun persistence.
+// system audit (windows only)
 
 
 #include <algorithm>
@@ -1185,7 +1168,7 @@ bool isElevated() {
     return ok && elevation.TokenIsElevated != 0;
 }
 
-// True when the file carries a valid embedded Authenticode signature chaining to a trusted root.
+// check if file has a valid digital signature
 bool hasValidSignature(const fs::path& file) {
     const std::wstring path = file.wstring();
     WINTRUST_FILE_INFO fileInfo{};
@@ -1255,7 +1238,7 @@ std::map<DWORD, ProcInfo> listProcesses() {
 
 std::string procLabel(const ProcInfo& p) { return p.name + " (PID " + std::to_string(p.pid) + ")"; }
 
-// ------------------------------------------------------------------ processes
+// processes
 void auditProcesses(const std::map<DWORD, ProcInfo>& procs, std::vector<Finding>& out) {
     const std::string win = windowsDirLower();
     const std::string sys32 = win + "\\system32\\";
@@ -1346,7 +1329,7 @@ void auditProcesses(const std::map<DWORD, ProcInfo>& procs, std::vector<Finding>
                            Severity::Critical));
 }
 
-// ------------------------------------------------------------------ network
+// network
 std::string ipv4(DWORD addr) {
     const auto* b = reinterpret_cast<const unsigned char*>(&addr);
     char buf[24];
@@ -1433,7 +1416,7 @@ void auditNetwork(const std::map<DWORD, ProcInfo>& procs, SystemStats& stats, st
     }
 }
 
-// ------------------------------------------------------------------ autoruns
+// autoruns
 void checkAutorunCommand(const std::string& location, const std::string& command, const RuleSet& rules,
                          std::vector<Finding>& out) {
     const std::string lc = toLower(command);
@@ -1507,7 +1490,7 @@ void auditRunKeys(const RuleSet& rules, SystemStats& stats, std::vector<Finding>
                 continue;
             if (type != REG_SZ && type != REG_EXPAND_SZ) continue;
             const std::string valueName = wideToUtf8(std::wstring(name.data(), nameLen));
-            // In ...\Windows only the "Load" and "Run" values are persistence points.
+            // only Load and Run values matter here
             if (windowsKey && toLower(valueName) != "load" && toLower(valueName) != "run") continue;
             std::wstring w(reinterpret_cast<const wchar_t*>(data.data()), dataLen / sizeof(wchar_t));
             while (!w.empty() && w.back() == L'\0') w.pop_back();
@@ -1595,7 +1578,7 @@ std::vector<Finding> analyzeSystem(const RuleSet& rules, const SystemOptions& op
             const bool signedOk = hasValidSignature(imagePath);
             if (signedOk) ++stats.imagesSigned;
             for (auto& f : found) {
-                // Heuristics on a validly signed binary are almost always benign: keep them as INFO.
+                // signed files: lower heuristic hits to INFO
                 if (signedOk && f.category != "Signature") {
                     f.severity = Severity::Info;
                     f.detail += " [image has a valid Authenticode signature]";
@@ -1613,10 +1596,7 @@ std::vector<Finding> analyzeSystem(const RuleSet& rules, const SystemOptions& op
 
 }  // namespace ta
 
-// =============================================================================
-//  report
-// =============================================================================
-// Threat Analyzer - risk scoring, console report and JSON export.
+// scoring and report output
 
 #include <algorithm>
 #include <cstdio>
@@ -1627,9 +1607,8 @@ std::vector<Finding> analyzeSystem(const RuleSet& rules, const SystemOptions& op
 
 namespace ta {
 
-// The score is the risk of the *worst* target (file, IP, process, ...): severity weights are summed
-// per target and capped at 100. Scanning a big folder with a few weak heuristic hits spread over many
-// files therefore stays low, while one file with several strong indicators scores high.
+// score = highest total for a single target, max 100
+// so lots of small hits in different files dont add up
 int riskScore(const std::vector<Finding>& findings) {
     std::map<std::string, long> perTarget;
     long worst = 0;
@@ -1685,7 +1664,7 @@ struct Palette {
 const std::string kRule(72, '=');
 const std::string kThin(72, '-');
 
-// Wraps long text onto continuation lines aligned under the value column.
+// wrap long text in console output
 void printField(const char* label, const std::string& value, const Palette& p) {
     const size_t width = 58;
     const std::string indent(14, ' ');
@@ -1845,10 +1824,7 @@ bool writeJson(const Report& r, const fs::path& file, std::string& error) {
 
 }  // namespace ta
 
-// =============================================================================
-//  main
-// =============================================================================
-// Threat Analyzer - command line front end.
+// main / command line
 
 
 #include <algorithm>
@@ -1881,7 +1857,7 @@ struct Options {
     int threshold = 5;
     int portscan = 10;
     int notfound = 20;
-    // serve (web dashboard)
+    // serve command (web ui)
     int port = 18080;
     std::string web;
     bool openBrowser = true;
