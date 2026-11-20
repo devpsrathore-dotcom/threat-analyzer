@@ -1,0 +1,102 @@
+# =============================================================================
+#  Threat Analyzer rule database
+# =============================================================================
+#  Format (one rule per line):   TYPE|NAME|SEVERITY|VALUE
+#
+#   TYPE      HASH    SHA-256 of a known malicious file (64 hex chars)
+#             STRING  text searched case-insensitively inside every scanned file
+#                     (also checked against autorun command lines in 'system')
+#             HEX     raw byte sequence, e.g. 55 50 58 21  (spaces optional)
+#             LOG     ECMAScript regular expression, case-insensitive, applied
+#                     to every line by the 'logs' command. Only the first three
+#                     '|' separate fields, so '|' may be used inside the regex.
+#   SEVERITY  INFO | LOW | MEDIUM | HIGH | CRITICAL
+#
+#  Lines starting with '#' are comments. Add your own IOCs at the bottom.
+#  Tip: 'threat_analyzer hash <file>' prints a ready-made HASH rule line.
+# =============================================================================
+
+# ----------------------------------------------------------------- HASH
+# EICAR anti-virus test file (harmless industry standard test string)
+HASH|EICAR-Test-File|CRITICAL|275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f
+
+# ----------------------------------------------------------------- STRING: ransomware behaviour
+STRING|Ransomware: shadow copy deletion (vssadmin)|CRITICAL|vssadmin delete shadows
+STRING|Ransomware: shadow copy deletion (wmic)|CRITICAL|shadowcopy delete
+STRING|Ransomware: disables recovery (bcdedit)|HIGH|recoveryenabled no
+STRING|Ransomware: deletes backup catalog|HIGH|wbadmin delete catalog
+STRING|Ransomware: ransom note wording|HIGH|your files have been encrypted
+STRING|Ransomware: ransom payment instruction|MEDIUM|bitcoin wallet
+
+# ----------------------------------------------------------------- STRING: PowerShell abuse
+STRING|PowerShell: download cradle|HIGH|downloadstring(
+STRING|PowerShell: web client download-and-execute|HIGH|iex(new-object net.webclient)
+STRING|PowerShell: hidden window|MEDIUM|-windowstyle hidden
+STRING|PowerShell: no profile hidden|MEDIUM|-nop -w hidden
+STRING|PowerShell: encoded command|HIGH|powershell -enc
+STRING|PowerShell: encoded command (long)|HIGH|-encodedcommand
+STRING|PowerShell: in-memory base64 decode|MEDIUM|frombase64string(
+STRING|PowerShell: execution policy bypass|LOW|-executionpolicy bypass
+STRING|PowerShell: AMSI tampering|CRITICAL|amsiinitfailed
+
+# ----------------------------------------------------------------- STRING: living-off-the-land binaries
+STRING|LOLBin: certutil download|HIGH|certutil -urlcache
+STRING|LOLBin: certutil decode|MEDIUM|certutil -decode
+STRING|LOLBin: bitsadmin download|MEDIUM|bitsadmin /transfer
+STRING|LOLBin: mshta remote script|HIGH|mshta http
+STRING|LOLBin: regsvr32 squiblydoo|HIGH|/i:http
+STRING|LOLBin: rundll32 javascript|HIGH|rundll32.exe javascript:
+
+# ----------------------------------------------------------------- STRING: defence evasion
+STRING|Defender: real-time protection disabled|HIGH|disablerealtimemonitoring
+STRING|Defender: exclusion added|MEDIUM|add-mppreference -exclusionpath
+STRING|Event log clearing|HIGH|wevtutil cl
+STRING|Firewall disabled|HIGH|netsh advfirewall set allprofiles state off
+
+# ----------------------------------------------------------------- STRING: credential access
+STRING|Credential dump: LSASS minidump via comsvcs|HIGH|comsvcs.dll, minidump
+STRING|Credential dump: SAM hive export|HIGH|reg save hklm\sam
+STRING|Credential dump: procdump on LSASS|HIGH|-ma lsass
+
+# ----------------------------------------------------------------- STRING: persistence / execution
+STRING|Persistence: scheduled task creation|LOW|schtasks /create
+STRING|Persistence: Run-key modification|LOW|currentversion\run
+STRING|Account created from command line|MEDIUM|net user /add
+STRING|Local admin group modification|MEDIUM|net localgroup administrators
+
+# ----------------------------------------------------------------- STRING: web shells / reverse shells
+STRING|Web shell: eval of POST data|HIGH|eval($_post[
+STRING|Web shell: eval of base64|HIGH|eval(base64_decode(
+STRING|Web shell: system() on GET data|HIGH|system($_get[
+STRING|Web shell: passthru on request|HIGH|passthru($_request[
+STRING|Reverse shell: bash /dev/tcp|CRITICAL|/dev/tcp/
+STRING|Reverse shell: netcat exec|HIGH|nc -e /bin/
+
+# ----------------------------------------------------------------- STRING: crypto-mining
+STRING|Crypto miner: stratum pool URL|HIGH|stratum+tcp://
+STRING|Crypto miner: XMRig reference|MEDIUM|xmrig
+
+# ----------------------------------------------------------------- HEX
+HEX|Packer: UPX signature|MEDIUM|55 50 58 21
+
+# ----------------------------------------------------------------- LOG: web attacks
+LOG|SQL injection attempt|HIGH|(union(\s|%20|\+|/\*\*/)+(all(\s|%20|\+)+)?select|'(\s|%20|\+)*or(\s|%20|\+)*'?1'?(\s|%20|\+)*=(\s|%20|\+)*'?1|%27(\s|%20|\+)*or(\s|%20|\+)|information_schema|sleep\(\d+\)|benchmark\(|waitfor(\s|%20|\+)+delay|;(\s|%20)*drop(\s|%20|\+)+table)
+LOG|Cross-site scripting attempt|HIGH|(<script|%3cscript|javascript:|onerror(\s|%20)*=|onload(\s|%20)*=|%3csvg|<svg/onload|alert\(|document\.cookie)
+LOG|Path traversal attempt|HIGH|(\.\./|\.\.%2f|%2e%2e%2f|%2e%2e/|\.\.\\|/etc/passwd|/etc/shadow|win\.ini|boot\.ini)
+LOG|Command injection attempt|HIGH|((;|\||%7c|%3b|%26%26|&&)(\s|%20|\+)*(cat|wget|curl|nc|bash|sh|powershell|cmd|whoami|id|uname)(\s|%20|\+|$))
+LOG|Log4Shell (CVE-2021-44228) probe|CRITICAL|\$\{(jndi|\$\{lower:j\}|\$\{::-j\})
+LOG|Shellshock (CVE-2014-6271) probe|CRITICAL|\(\)\s*\{\s*:;\s*\};
+LOG|Sensitive file probe|MEDIUM|(/\.env(\s|\?|$|")|/\.git/|wp-config\.php|/\.aws/credentials|id_rsa|/\.htpasswd|/server-status|/phpinfo\.php)
+LOG|Admin panel probe|LOW|(/phpmyadmin|/wp-admin|/administrator/|/manager/html|/actuator/)
+LOG|Vulnerability scanner user agent|MEDIUM|(sqlmap|nikto|nmap|masscan|gobuster|dirbuster|wpscan|acunetix|nessus|zgrab|nuclei|hydra|wfuzz|ffuf)
+
+# ----------------------------------------------------------------- LOG: host / authentication
+LOG|Root/administrator login attempt|MEDIUM|(failed password for (invalid user )?(root|admin|administrator) from)
+LOG|Sudo authentication failure|MEDIUM|sudo:.*(authentication failure|incorrect password)
+LOG|New user account created|MEDIUM|(useradd|new user:|adduser|eventid[=: "]*4720|a user account was created|net user .* /add)
+LOG|User added to privileged group|HIGH|(usermod -a?G (sudo|wheel|admin)|eventid[=: "]*4732|added to (sudo|wheel|administrators))
+LOG|Security event log cleared|CRITICAL|(eventid[=: "]*1102|audit log was cleared|wevtutil cl)
+LOG|New service installed|MEDIUM|(eventid[=: "]*7045|a service was installed)
+LOG|Encoded PowerShell execution|HIGH|powershell(\.exe)?.*\s-(e|en|enc|encodedcommand)\s+[A-Za-z0-9+/=]{16,}
+LOG|Reverse shell command|CRITICAL|(/dev/tcp/|nc(\.exe)? -e |bash -i)
+LOG|Crypto-mining pool connection|HIGH|stratum\+tcp://

